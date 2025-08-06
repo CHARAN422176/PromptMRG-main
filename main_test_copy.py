@@ -130,7 +130,7 @@ def main():
     # parse arguments
     args = parse_agrs()
 
-    utils.init_distributed_mode(args) # from blip
+    utils.init_distributed_mode(args)  # from blip
     device = torch.device(args.device)
 
     # fix random seeds
@@ -144,23 +144,16 @@ def main():
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     tokenizer.add_special_tokens({'bos_token': '[DEC]'})
     tokenizer.add_tokens(['[BLA]', '[POS]', '[NEG]', '[UNC]'])
-
-    #### Dataset #### 
-    print("Creating dataset...")
-    test_dataset = create_dataset_test('generation_%s'%args.dataset_name, tokenizer, args)
-    print('number of testing samples: %d'%len(test_dataset))
-    
-    samplers = [None]
-
-    test_dataloader = create_loader([test_dataset], samplers, batch_size=[args.batch_size], num_workers=[4], is_trains=[False], collate_fns=[None])[0] 
+    print("Tokenizer size:", len(tokenizer))  # Should be 30527
 
     # build model architecture
-    labels_temp = ['[BLA]'] * 18 # for calculate length only
-    prompt_temp = ' '.join(labels_temp)+' '
+    labels_temp = ['[BLA]'] * 18
+    prompt_temp = ' '.join(labels_temp) + ' '
     model = blip_decoder(args, tokenizer, image_size=args.image_size, prompt=prompt_temp)
+
     if args.load_pretrained:
         state_dict = torch.load(args.load_pretrained, map_location="cpu")
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict, strict=False)
         print("load checkpoint from {}".format(args.load_pretrained))
 
     # --- Parameter counting ---
@@ -169,24 +162,49 @@ def main():
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
 
+    # --- FLOPs calculation section ---
+    # Install thop if not present
+    try:
+        from thop import profile, clever_format
+    except ImportError:
+        import os
+        os.system('pip install -q thop')
+        from thop import profile, clever_format
 
-    # # get function handles of loss and metrics
-    # criterion_cls = nn.CrossEntropyLoss()
-    # metrics = compute_scores
+    # Prepare dummy inputs that match the model's forward
+    batch_size = 1
+    dummy_image = torch.randn(batch_size, 3, args.image_size, args.image_size)
+    dummy_caption = ['this is a dummy caption'] * batch_size
+    dummy_cls_labels = torch.zeros(batch_size, 18, dtype=torch.long)
+    clip_k = 21
+    clip_dim = 512
+    dummy_clip_memory = torch.randn(batch_size, clip_k, clip_dim)
+    criterion_cls = nn.CrossEntropyLoss()
+    dummy_base_probs = np.ones(18, dtype=np.float32)
 
-    # model = model.to(device)   
-    # model_without_ddp = model
-    # if args.distributed:
-    #     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-    #     model_without_ddp = model.module    
+    # Patch forward if needed (for torchscript/thop tracing)
+    orig_forward = model.forward
+    def patched_forward(image, caption, cls_labels, clip_memory, criterion_cls, base_probs):
+        with torch.no_grad():
+            return orig_forward(image, caption, cls_labels, clip_memory, criterion_cls, base_probs)
+    model.forward = patched_forward
 
-    # # build trainer and start to train
-    # tester = Tester(model, criterion_cls, metrics, args, device, test_dataloader)
+    macs, params = profile(
+        model,
+        inputs=(
+            dummy_image,
+            dummy_caption,
+            dummy_cls_labels,
+            dummy_clip_memory,
+            criterion_cls,
+            dummy_base_probs
+        )
+    )
+    macs_cf, params_cf = clever_format([macs, params], "%.3f")
+    print(f"FLOPs (thop): {macs_cf}")
+    print(f"Parameters (thop): {params_cf}")
 
-    # log = tester.test_blip()
-    # for key, value in log.items():
-    #     print('\t{:15s}: {}'.format(str(key), value))
-    
+    model.forward = orig_forward  # Restore original if needed
+
 if __name__ == '__main__':
     main()
-
