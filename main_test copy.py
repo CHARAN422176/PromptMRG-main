@@ -106,22 +106,22 @@ def main():
     print(f"Trainable parameters: {trainable_params:,}")
 
 
-    # get function handles of loss and metrics
-    criterion_cls = nn.CrossEntropyLoss()
-    metrics = compute_scores
+    # # get function handles of loss and metrics
+    # criterion_cls = nn.CrossEntropyLoss()
+    # metrics = compute_scores
 
-    model = model.to(device)   
-    model_without_ddp = model
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module    
+    # model = model.to(device)   
+    # model_without_ddp = model
+    # if args.distributed:
+    #     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+    #     model_without_ddp = model.module    
 
-    # build trainer and start to train
-    tester = Tester(model, criterion_cls, metrics, args, device, test_dataloader)
+    # # build trainer and start to train
+    # tester = Tester(model, criterion_cls, metrics, args, device, test_dataloader)
 
-    log = tester.test_blip()
-    for key, value in log.items():
-        print('\t{:15s}: {}'.format(str(key), value))
+    # log = tester.test_blip()
+    # for key, value in log.items():
+    #     print('\t{:15s}: {}'.format(str(key), value))
     
 if __name__ == '__main__':
     main()
