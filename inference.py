@@ -9,7 +9,7 @@ from models.blip import blip_decoder
 
 class Args:
     image_size = 224
-    load_pretrained = '/kaggle/input/your_model_path/model_best.pth'  # <== Change to your .pth file
+    load_pretrained = '/kaggle/input/promptmrg_model/pytorch/default/3/model_promptmrg_20240305.pth'  # <== Change to your .pth file
     device = 'cpu'  # or 'cuda' if available
     cls_weight = 4
     clip_k = 21
